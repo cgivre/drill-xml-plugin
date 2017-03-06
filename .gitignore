@@ -5,7 +5,7 @@
 
 #IdeaJ
 .idea/
-.target/
+target/
 
 # Package Files #
 *.jar
