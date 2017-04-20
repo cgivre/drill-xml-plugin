@@ -87,6 +87,7 @@ public class XMLRecordReader extends AbstractRecordReader {
 
         int last_event = 0;
         int last_level;
+        int column_index = 0;
         boolean in_nested = false;
         nested_data = new Vector();
         nested_data2 = new XMLDataVector();
@@ -99,7 +100,8 @@ public class XMLRecordReader extends AbstractRecordReader {
             BaseWriter.MapWriter map = this.writer.rootAsMap();
             int loop_iteration = 0;
             this.nesting_level = 0;
-            field_loop: while( this.XMLReader.hasNext() ){
+
+            while( this.XMLReader.hasNext() ){
                 XMLEvent event = this.XMLReader.nextEvent();
                 //Skips empty events
                 if( event.toString().trim().isEmpty() ){
@@ -139,19 +141,49 @@ public class XMLRecordReader extends AbstractRecordReader {
 
                     case  XMLStreamConstants.END_ELEMENT:
                         if( nesting_level == data_level  ){
-                            if( in_nested == false ) {
+
+                            if( column_index == 0 ){
                                 this.writer.setPosition(recordCount);
                                 map.start();
+                            }
+
+                            if( in_nested == false ) {
                                 byte[] bytes = field_value.getBytes("UTF-8");
                                 this.buffer.setBytes(0, bytes, 0, bytes.length);
                                 map.varChar(current_field_name).writeVarChar(0, bytes.length, buffer);
+                                column_index++;
 
-                                //tag_stack.pop();
                             } else {
                                 //Write an array if all the keys are the same
                                 if( nested_data2.is_array() ){
                                     BaseWriter.ListWriter list = map.list( nested_data2.get_nested_field_name());
                                     list.startList();
+                                    Vector temp_data = nested_data2.get_data_vector();
+
+                                    for( Object data_object : temp_data) {
+                                        if ( data_object instanceof XMLDataObject) {
+
+                                            field_value = ((XMLDataObject) data_object).get_field_value();
+
+                                            byte[] rowStringBytes = field_value.getBytes();
+                                            this.buffer.reallocIfNeeded(rowStringBytes.length);
+                                            this.buffer.setBytes(0, rowStringBytes);
+
+                                            list.varChar().writeVarChar(0, rowStringBytes.length, buffer);
+
+                                        }
+                                    }
+                                    list.endList();
+                                    nested_data2 = new XMLDataVector();
+                                    nested_field_name_stack.pop();
+                                    column_index++;
+
+                                } else {
+                                    //TODO Test Maps
+                                    System.out.println( "IS MAP!");
+                                    BaseWriter.MapWriter nested_map = map.map(nested_data2.get_nested_field_name());
+                                    nested_map.start();
+
                                     Vector temp_data = nested_data2.get_data_vector();
 
                                     for( Object data_object : temp_data) {
@@ -165,18 +197,16 @@ public class XMLRecordReader extends AbstractRecordReader {
                                             this.buffer.reallocIfNeeded(rowStringBytes.length);
                                             this.buffer.setBytes(0, rowStringBytes);
 
-                                            list.varChar().writeVarChar(0, rowStringBytes.length, buffer);
+                                            nested_map.varChar(current_field_name).writeVarChar(0, rowStringBytes.length, buffer);
 
                                         }
                                     }
-                                    list.endList();
+                                    nested_map.end();
                                     nested_data2 = new XMLDataVector();
                                     nested_field_name_stack.pop();
-
-                                } else {
-                                    System.out.println( "IS MAP!");
+                                    column_index++;
                                 }
-                                //Write a map if they are not
+
 
                                 in_nested = false;
                             }
@@ -192,20 +222,20 @@ public class XMLRecordReader extends AbstractRecordReader {
                         if( last_event ==  XMLStreamConstants.END_ELEMENT && nesting_level == (data_level - 1)) {
                             map.end();
                             recordCount++;
-                            this.writer.setValueCount(recordCount);
+                            column_index = 0;
                         }
 
                         nesting_level--;
                         break;
 
-                }
+                    }
                 last_element_type = event.getEventType();
                 loop_iteration++;
                 last_event = event.getEventType();
                 last_level = this.nesting_level;
-            }
+            } // End loop
 
-
+            this.writer.setValueCount(recordCount);
             return recordCount;
 
         } catch (final Exception e) {

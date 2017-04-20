@@ -41,7 +41,11 @@ class XMLDataVector {
     }
 
     public boolean is_array() {
-       return is_array;
+        if( data.size() == 1 ){
+            return true;
+        } else {
+            return is_array;
+        }
     }
 
     public boolean add( XMLDataObject e ){
