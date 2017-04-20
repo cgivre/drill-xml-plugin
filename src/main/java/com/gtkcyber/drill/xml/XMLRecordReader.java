@@ -5,7 +5,6 @@ import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.exec.exception.OutOfMemoryException;
-import org.apache.drill.exec.expr.holders.VarCharHolder;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;
 import org.apache.drill.exec.physical.impl.OutputMutator;
@@ -77,18 +76,24 @@ public class XMLRecordReader extends AbstractRecordReader {
     public int next() {
         this.writer.allocate();
         this.writer.reset();
+        boolean flatten = config.flatten;
+
 
         String field_value = "";
+        String field_prefix = "";
         String current_field_name = "";
         int recordCount = 0;
         int data_level = 3;
 
         int last_event = 0;
-        int last_level = 0;
+        int last_level;
         boolean in_nested = false;
-        Stack<Object> nesting_stack = new Stack();
         nested_data = new Vector();
         nested_data2 = new XMLDataVector();
+        int last_element_type = -1;
+
+        Stack<String> nested_field_name_stack = new Stack<String>();
+        String flattened_field_name = "";
 
         try {
             BaseWriter.MapWriter map = this.writer.rootAsMap();
@@ -101,11 +106,22 @@ public class XMLRecordReader extends AbstractRecordReader {
                     continue;
                 }
 
+                if( loop_iteration == 0 ){
+                    last_element_type = event.getEventType();
+                }
+
                 switch(event.getEventType()){
                     case XMLStreamConstants.START_ELEMENT:
                         StartElement startElement = event.asStartElement();
                         String qName = startElement.getName().getLocalPart();
+
+                        if( last_element_type == XMLStreamConstants.START_ELEMENT ){
+                            nested_field_name_stack.push( current_field_name );
+                            nested_data2.set_nested_field_name(current_field_name);
+                        }
                         current_field_name = startElement.getName().getLocalPart();
+
+                        //TODO Add Attribute Capability
                         if (qName.equalsIgnoreCase("student")) {
                             System.out.println("Start Element : student");
                             Iterator<Attribute> attributes = startElement.getAttributes();
@@ -113,6 +129,8 @@ public class XMLRecordReader extends AbstractRecordReader {
                             System.out.println("Roll No : " + rollNo);
                         }
                         nesting_level++;
+                        field_prefix = addField(field_prefix, current_field_name);
+
                         break;
                     case XMLStreamConstants.CHARACTERS:
                         Characters characters = event.asCharacters();
@@ -127,36 +145,33 @@ public class XMLRecordReader extends AbstractRecordReader {
                                 byte[] bytes = field_value.getBytes("UTF-8");
                                 this.buffer.setBytes(0, bytes, 0, bytes.length);
                                 map.varChar(current_field_name).writeVarChar(0, bytes.length, buffer);
+
+                                //tag_stack.pop();
                             } else {
-                                System.out.println( "DUMP Vector");
-                                System.out.println( nested_data);
                                 //Write an array if all the keys are the same
                                 if( nested_data2.is_array() ){
-                                    System.out.println( "IS ARRAY!!");
-                                    this.writer.setPosition(recordCount);
-                                    map.start();
+                                    BaseWriter.ListWriter list = map.list( nested_data2.get_nested_field_name());
+                                    list.startList();
                                     Vector temp_data = nested_data2.get_data_vector();
 
                                     for( Object data_object : temp_data) {
                                         if ( data_object instanceof XMLDataObject) {
 
                                             field_value = ((XMLDataObject) data_object).get_field_value();
+                                            System.out.println( "Array name: " + nested_data2.get_nested_field_name());
                                             System.out.println( "Field Name: " + current_field_name + " Value: " + field_value );
-                                            VarCharHolder rowHolder = new org.apache.drill.exec.expr.holders.VarCharHolder();
 
                                             byte[] rowStringBytes = field_value.getBytes();
                                             this.buffer.reallocIfNeeded(rowStringBytes.length);
                                             this.buffer.setBytes(0, rowStringBytes);
 
-                                            rowHolder.start = 0;
-                                            rowHolder.end = rowStringBytes.length;
-                                            rowHolder.buffer = this.buffer;
-                                            map.list("authors")
+                                            list.varChar().writeVarChar(0, rowStringBytes.length, buffer);
 
                                         }
                                     }
-                                    map.list("authors").endList();
-
+                                    list.endList();
+                                    nested_data2 = new XMLDataVector();
+                                    nested_field_name_stack.pop();
 
                                 } else {
                                     System.out.println( "IS MAP!");
@@ -172,7 +187,6 @@ public class XMLRecordReader extends AbstractRecordReader {
                             nested_data.add(new XMLDataObject(current_field_name, field_value) );
                             nested_data2.add( new XMLDataObject(current_field_name, field_value));
 
-
                         }
                         //TODO Deal with Nested Data
                         if( last_event ==  XMLStreamConstants.END_ELEMENT && nesting_level == (data_level - 1)) {
@@ -185,11 +199,12 @@ public class XMLRecordReader extends AbstractRecordReader {
                         break;
 
                 }
-
+                last_element_type = event.getEventType();
                 loop_iteration++;
                 last_event = event.getEventType();
                 last_level = this.nesting_level;
             }
+
 
             return recordCount;
 
@@ -202,4 +217,20 @@ public class XMLRecordReader extends AbstractRecordReader {
         this.reader.close();
     }
 
+    private String addField( String prefix, String field ){
+        return prefix + "_" + field;
+    }
+
+    private String removeField( String fieldName ){
+        String[] components = fieldName.split( "_" );
+        String newField = "";
+        for( int i = 0; i < components.length - 1; i++ ){
+            if( i > 0 ) {
+                newField = newField + "_" + components[i];
+            } else {
+                newField = components[i];
+            }
+        }
+        return newField;
+    }
 }

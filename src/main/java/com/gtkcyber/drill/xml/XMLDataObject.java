@@ -27,10 +27,12 @@ class XMLDataVector {
     private Vector<String> keys;
     private Vector data;
     private boolean is_array;
+    private String nested_field_name;
 
     public XMLDataVector( ){
         keys = new Vector();
         data = new Vector();
+        nested_field_name = "";
         is_array = false;
     }
 
@@ -53,9 +55,18 @@ class XMLDataVector {
         return data.add(e);
     }
 
+    public void empty(){
+        keys = new Vector();
+        data = new Vector();
+        nested_field_name = "";
+        is_array = false;
+    }
+
     public Vector get_data_vector(){
         return data;
     }
+    public String get_nested_field_name() { return nested_field_name;}
+    public void set_nested_field_name( String s ){ nested_field_name = s;}
 
 
 }

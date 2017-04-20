@@ -69,6 +69,7 @@ public class XMLFormatPlugin extends EasyFormatPlugin<XMLFormatPlugin.XMLFormatC
     @JsonTypeName("xml")
     public static class XMLFormatConfig implements FormatPluginConfig {
         public List<String> extensions;
+        public boolean flatten = false;
 
         private static final List<String> DEFAULT_EXTS = ImmutableList.of("xml");
 
