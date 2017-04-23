@@ -70,6 +70,7 @@ public class XMLFormatPlugin extends EasyFormatPlugin<XMLFormatPlugin.XMLFormatC
     public static class XMLFormatConfig implements FormatPluginConfig {
         public List<String> extensions;
         public boolean flatten = false;
+        public boolean flatten_attributes = true;
 
         private static final List<String> DEFAULT_EXTS = ImmutableList.of("xml");
 

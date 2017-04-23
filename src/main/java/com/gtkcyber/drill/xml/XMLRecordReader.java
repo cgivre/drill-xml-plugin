@@ -1,5 +1,6 @@
 package com.gtkcyber.drill.xml;
 
+import com.google.common.collect.Iterators;
 import io.netty.buffer.DrillBuf;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.exceptions.UserException;
@@ -77,7 +78,7 @@ public class XMLRecordReader extends AbstractRecordReader {
         this.writer.allocate();
         this.writer.reset();
         boolean flatten = config.flatten;
-
+        boolean flatten_attributes = config.flatten_attributes;
 
         String field_value = "";
         String field_prefix = "";
@@ -95,6 +96,7 @@ public class XMLRecordReader extends AbstractRecordReader {
 
         Stack<String> nested_field_name_stack = new Stack<String>();
         String flattened_field_name = "";
+        BaseWriter.MapWriter attrib_map = null;
 
         try {
             BaseWriter.MapWriter map = this.writer.rootAsMap();
@@ -123,13 +125,37 @@ public class XMLRecordReader extends AbstractRecordReader {
                         }
                         current_field_name = startElement.getName().getLocalPart();
 
-                        //TODO Add Attribute Capability
-                        if (qName.equalsIgnoreCase("student")) {
-                            System.out.println("Start Element : student");
-                            Iterator<Attribute> attributes = startElement.getAttributes();
-                            String rollNo = attributes.next().getValue();
-                            System.out.println("Roll No : " + rollNo);
+                        int attribute_count = Iterators.size(startElement.getAttributes());
+
+                        if( !flatten_attributes && attribute_count > 0 ){
+                            attrib_map = map.map(current_field_name +"_attribs" );
+                            attrib_map.start();
                         }
+
+                        Iterator<Attribute> attributes = startElement.getAttributes();
+
+                        while( attributes.hasNext() ){
+                            Attribute a = attributes.next();
+                            if( flatten_attributes ){
+                                String attrib_field_name = current_field_name + "_" + a.getName();
+                                byte[] bytes = a.getValue().getBytes("UTF-8");
+                                this.buffer.setBytes(0, bytes, 0, bytes.length);
+                                map.varChar(attrib_field_name).writeVarChar(0, bytes.length, buffer);
+
+                            } else {
+                                //Create a map of attributes
+                                String attrib_name = a.getName().toString();
+                                byte[] bytes = a.getValue().getBytes("UTF-8");
+                                this.buffer.setBytes(0, bytes, 0, bytes.length);
+                                attrib_map.varChar( attrib_name).writeVarChar(0, bytes.length, buffer);
+                            }
+
+                        }
+
+                        if( !flatten_attributes && attribute_count > 0 ){
+                            attrib_map.end();
+                        }
+
                         nesting_level++;
                         field_prefix = addField(field_prefix, current_field_name);
 
