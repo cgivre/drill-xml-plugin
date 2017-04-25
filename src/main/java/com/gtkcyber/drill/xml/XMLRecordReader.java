@@ -45,7 +45,6 @@ public class XMLRecordReader extends AbstractRecordReader {
     private int lineCount;
     private Stack tag_stack;
     private int nesting_level;
-    private Vector nested_data;
     private XMLDataVector nested_data2;
 
     public XMLRecordReader(FragmentContext fragmentContext, String inputPath, DrillFileSystem fileSystem,
@@ -90,13 +89,14 @@ public class XMLRecordReader extends AbstractRecordReader {
         int last_level;
         int column_index = 0;
         boolean in_nested = false;
-        nested_data = new Vector();
+        boolean map_start = false;
         nested_data2 = new XMLDataVector();
         int last_element_type = -1;
 
         Stack<String> nested_field_name_stack = new Stack<String>();
         String flattened_field_name = "";
         BaseWriter.MapWriter attrib_map = null;
+        BaseWriter.MapWriter nested_map = null;
 
         try {
             BaseWriter.MapWriter map = this.writer.rootAsMap();
@@ -134,6 +134,7 @@ public class XMLRecordReader extends AbstractRecordReader {
 
                         Iterator<Attribute> attributes = startElement.getAttributes();
 
+                        //TODO Add Support for attributes on nested fields
                         while( attributes.hasNext() ){
                             Attribute a = attributes.next();
                             if( flatten_attributes ){
@@ -205,25 +206,24 @@ public class XMLRecordReader extends AbstractRecordReader {
                                     column_index++;
 
                                 } else {
-                                    //TODO Test Maps
-                                    System.out.println( "IS MAP!");
-                                    BaseWriter.MapWriter nested_map = map.map(nested_data2.get_nested_field_name());
-                                    nested_map.start();
-
+                                    //TODO Create a Stack for the nested_map (You'll need for deeper nesting
                                     Vector temp_data = nested_data2.get_data_vector();
+
+                                    if( map_start ) {
+                                        nested_map = map.map(nested_data2.get_nested_field_name());
+                                        nested_map.start();
+                                        map_start = false;
+                                    }
 
                                     for( Object data_object : temp_data) {
                                         if ( data_object instanceof XMLDataObject) {
 
                                             field_value = ((XMLDataObject) data_object).get_field_value();
-                                            System.out.println( "Array name: " + nested_data2.get_nested_field_name());
-                                            System.out.println( "Field Name: " + current_field_name + " Value: " + field_value );
-
                                             byte[] rowStringBytes = field_value.getBytes();
                                             this.buffer.reallocIfNeeded(rowStringBytes.length);
                                             this.buffer.setBytes(0, rowStringBytes);
 
-                                            nested_map.varChar(current_field_name).writeVarChar(0, rowStringBytes.length, buffer);
+                                            nested_map.varChar(((XMLDataObject) data_object).get_key()).writeVarChar(0, rowStringBytes.length, buffer);
 
                                         }
                                     }
@@ -240,11 +240,11 @@ public class XMLRecordReader extends AbstractRecordReader {
                         }
                         else if( nesting_level > data_level ) {
                             in_nested = true;
-                            nested_data.add(new XMLDataObject(current_field_name, field_value) );
                             nested_data2.add( new XMLDataObject(current_field_name, field_value));
+                            map_start = true;
 
                         }
-                        //TODO Deal with Nested Data
+
                         if( last_event ==  XMLStreamConstants.END_ELEMENT && nesting_level == (data_level - 1)) {
                             map.end();
                             recordCount++;

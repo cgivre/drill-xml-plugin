@@ -18,6 +18,8 @@ public class XMLDataObject {
         return (String)value;
     }
 
+    public String get_key() { return key; };
+
     public String toString() {
         return this.key + ": " + this.value.toString();
     }
