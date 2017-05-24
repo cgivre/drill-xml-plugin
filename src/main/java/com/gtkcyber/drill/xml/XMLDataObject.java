@@ -50,6 +50,10 @@ class XMLDataVector {
         }
     }
 
+    public boolean is_nested() {
+        return false;
+    }
+
     public boolean add( XMLDataObject e ){
 
         if( keys.contains(e.key) ) {

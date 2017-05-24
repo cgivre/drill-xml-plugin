@@ -90,13 +90,22 @@ public class XMLRecordReader extends AbstractRecordReader {
         int column_index = 0;
         boolean in_nested = false;
         boolean map_start = false;
+
         nested_data2 = new XMLDataVector();
         int last_element_type = -1;
 
+        //Fields for nested maps & arrays
         Stack<String> nested_field_name_stack = new Stack<String>();
+        Stack<BaseWriter.MapWriter> nested_data_stack = new Stack<BaseWriter.MapWriter>();
+        BaseWriter.MapWriter current_map;
+        String current_map_name;
+
+
         String flattened_field_name = "";
         BaseWriter.MapWriter attrib_map = null;
         BaseWriter.MapWriter nested_map = null;
+
+
 
         try {
             BaseWriter.MapWriter map = this.writer.rootAsMap();
@@ -121,6 +130,8 @@ public class XMLRecordReader extends AbstractRecordReader {
 
                         if( last_element_type == XMLStreamConstants.START_ELEMENT ){
                             nested_field_name_stack.push( current_field_name );
+                            nested_data_stack.push(map.map(current_field_name));
+
                             nested_data2.set_nested_field_name(current_field_name);
                         }
                         current_field_name = startElement.getName().getLocalPart();
@@ -167,6 +178,8 @@ public class XMLRecordReader extends AbstractRecordReader {
                         break;
 
                     case  XMLStreamConstants.END_ELEMENT:
+                        //Data gets output in this section
+                        //If the data's nesting level at the "root" level, output the data to a holder
                         if( nesting_level == data_level  ){
 
                             if( column_index == 0 ){
@@ -174,14 +187,20 @@ public class XMLRecordReader extends AbstractRecordReader {
                                 map.start();
                             }
 
+                            //If the data is not nested, write a VARCHAR
                             if( in_nested == false ) {
                                 byte[] bytes = field_value.getBytes("UTF-8");
                                 this.buffer.setBytes(0, bytes, 0, bytes.length);
+
+                                //TODO Write date/time interpreters
                                 map.varChar(current_field_name).writeVarChar(0, bytes.length, buffer);
                                 column_index++;
 
                             } else {
-                                //Write an array if all the keys are the same
+                                /*
+                                * If the data is nested, write either an array if all the keys are the same,
+                                * or a map if the keys are different
+                                * */
                                 if( nested_data2.is_array() ){
                                     BaseWriter.ListWriter list = map.list( nested_data2.get_nested_field_name());
                                     list.startList();
@@ -191,7 +210,6 @@ public class XMLRecordReader extends AbstractRecordReader {
                                         if ( data_object instanceof XMLDataObject) {
 
                                             field_value = ((XMLDataObject) data_object).get_field_value();
-
                                             byte[] rowStringBytes = field_value.getBytes();
                                             this.buffer.reallocIfNeeded(rowStringBytes.length);
                                             this.buffer.setBytes(0, rowStringBytes);
@@ -206,8 +224,12 @@ public class XMLRecordReader extends AbstractRecordReader {
                                     column_index++;
 
                                 } else {
-                                    //TODO Create a Stack for the nested_map (You'll need for deeper nesting
+                                    //TODO Create a Stack for the nested_map (You'll need for deeper nesting)
                                     Vector temp_data = nested_data2.get_data_vector();
+
+                                    //Get the field name
+                                    current_map_name = nested_field_name_stack.peek();
+                                    System.out.println( "Map: " + current_map_name);
 
                                     if( map_start ) {
                                         nested_map = map.map(nested_data2.get_nested_field_name());
@@ -220,6 +242,7 @@ public class XMLRecordReader extends AbstractRecordReader {
 
                                             field_value = ((XMLDataObject) data_object).get_field_value();
                                             byte[] rowStringBytes = field_value.getBytes();
+
                                             this.buffer.reallocIfNeeded(rowStringBytes.length);
                                             this.buffer.setBytes(0, rowStringBytes);
 
@@ -232,7 +255,6 @@ public class XMLRecordReader extends AbstractRecordReader {
                                     nested_field_name_stack.pop();
                                     column_index++;
                                 }
-
 
                                 in_nested = false;
                             }
